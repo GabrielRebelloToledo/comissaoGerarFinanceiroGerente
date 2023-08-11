@@ -1,0 +1,147 @@
+DEVE-SE CRIAR 2 CAMPOS NA TGFFIN AD_INFORMACOES_ADICIONAIS (Notas Geradas Comissão Gerente Texto) E AD_COMISSAOGERENTE(Lançamento Comissão gerente Número Inteiro), 
+
+
+
+CREATE OR REPLACE PROCEDURE InserirDadosDaView(
+      P_CODUSU NUMBER,
+      P_IDSESSAO VARCHAR2,
+      P_QTDLINHAS NUMBER,
+      P_MENSAGEM OUT VARCHAR2
+   
+) AS
+V_DATA1 DATE;
+V_DATA2 DATE;
+BEGIN
+V_DATA1 := ACT_DTA_PARAM(P_IDSESSAO, 'DATA1');
+V_DATA2 := ACT_DTA_PARAM(P_IDSESSAO, 'DATA2');
+
+INSERT INTO AD_LANCAMENTOS(CODID, VALOR, NOTA, CODPROD, CODPARC,NOMEPARC,FAMILIA,DTNEG, NUFIN, CODGRUPOPROD, TIPOTITULO)
+SELECT (SELECT CASE WHEN MAX(ADLANC.CODID)+1 IS NULL THEN 0 ELSE MAX(ADLANC.CODID)+1 END AS COD FROM AD_LANCAMENTOS ADLANC)+TO_NUMBER(CALC.CODID), TO_NUMBER(CALC.VALORCOMISSAO), TO_NUMBER(CALC.NUNOTA), TO_NUMBER(CALC.CODPROD),TO_NUMBER(CALC.CODPARC), CALC.NOMEPARC,CALC.FAMILIA,CALC.DTNEG,TO_NUMBER(CALC.NUFIN), TO_NUMBER(CALC.CODGRUPOPROD),CALC.TIPOTITULO  FROM AD_CALCGERENTE CALC WHERE CALC.DTNEG >= V_DATA1 AND CALC.DTNEG <= V_DATA2;
+
+COMMIT;
+
+UPDATE TGFFIN FIN
+   SET FIN.AD_COMISSAOGERENTE  = 1
+    WHERE FIN.NUFIN IN (SELECT CALC.NUFIN
+                   FROM AD_CALCGERENTE CALC
+                   WHERE CALC.DTNEG >= V_DATA1 AND CALC.DTNEG <= V_DATA2);     
+
+
+COMMIT;
+P_MENSAGEM := 'Dados inseridos e atualizados com sucesso.';
+EXCEPTION
+    WHEN OTHERS THEN
+        P_MENSAGEM := 'Erro ao inserir e atualizar dados: ' || SQLERRM;
+END InserirDadosDaView;
+
+
+CREATE OR REPLACE TRIGGER ImpedirExclusao
+BEFORE DELETE ON AD_lancamentos
+FOR EACH ROW
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    IF :OLD.LANCADO IS NOT NULL THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Não é permitido excluir a linha com financeiro gerado.');
+    END IF;
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+
+
+END ImpedirExclusao;
+
+
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION SPLIT_STRING(p_string IN VARCHAR2, p_delimiter IN VARCHAR2)
+  RETURN SYS.ODCIVARCHAR2LIST PIPELINED IS
+    l_start NUMBER := 1;
+    l_idx   NUMBER;
+BEGIN
+  LOOP
+    l_idx := INSTR(p_string, p_delimiter, l_start);
+    IF l_idx = 0 THEN
+      PIPE ROW(SUBSTR(p_string, l_start));
+      EXIT;
+    END IF;
+    PIPE ROW(SUBSTR(p_string, l_start, l_idx - l_start));
+    l_start := l_idx + LENGTH(p_delimiter);
+  END LOOP;
+  RETURN;
+END SPLIT_STRING;
+
+CREATE OR REPLACE TRIGGER trg_delete_tgffin
+AFTER DELETE ON tgffin
+FOR EACH ROW
+DECLARE
+    v_variaveis VARCHAR2(100); -- Ajuste o tamanho conforme necessário
+BEGIN
+    -- Captura o valor do campo AD_INFORMACOES_ADICIONAIS da linha deletada
+    v_variaveis := :OLD.AD_INFORMACOES_ADICIONAIS;
+    
+    -- Itera sobre as partes e atualiza as linhas correspondentes na tabela AD_LANCAMENTOS
+    FOR v_item IN (SELECT COLUMN_VALUE AS ad_info FROM TABLE(SPLIT_STRING(v_variaveis, ',')))
+    LOOP
+        UPDATE ad_lancamentos
+        SET lancado = NULL
+        WHERE CODID = v_item.ad_info;
+    END LOOP;
+    
+    -- Confirma a transação
+    COMMIT;
+EXCEPTION
+   WHEN OTHERS THEN
+        -- Tratamento de erro, se necessário
+        NULL;
+
+END;
+
+
+
+
+CREATE OR REPLACE TRIGGER ImpedirExclusao
+BEFORE DELETE ON ad_lancamentos
+FOR EACH ROW
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    IF :OLD.LANCADO IS NOT NULL THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Não é permitido excluir a linha com financeiro gerado.');
+    END IF;
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END ImpedirExclusao;
+
+
+CREATE OR REPLACE TRIGGER atualiza_apos_exclusao
+AFTER DELETE ON AD_LANCAMENTOS
+FOR EACH ROW
+BEGIN
+
+    UPDATE TGFFIN
+    SET AD_COMISSAOGERENTE = NULL
+    WHERE NUFIN = :OLD.NUFIN;
+
+
+-- Mensagem de saída para o usuário
+    DBMS_OUTPUT.PUT_LINE('Título Excluído. Verifique se existe outro número de financeiro caso ele não apareça.');
+
+
+END;
+
+
+
+
+
+
+
