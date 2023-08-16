@@ -144,4 +144,135 @@ END;
 
 
 
+CREATE OR REPLACE VIEW AD_CALCGERENTE AS     SELECT
+    (
+        row_number() over (
+            
+order by
+                ITE.NUNOTA
+        )
+    ) AS CODID,
+    ITE.NUNOTA,
+    ITE.CODPROD,
+    PROD.CODGRUPOPROD,
+    ITE.QTDNEG,
+    ITE.VLRUNIT,
+    ITE.VLRTOT,
+    CAB.DTNEG,
+    CAB.DTFATUR,
+    CAB.DTMOV,
+    FINA.NUFIN,
+    CAB.TIPMOV AS TIPOTITULO,
+    CASE
+    
+WHEN CAB.TIPMOV = 'V' THEN
+   ROUND(NVL(
+        (
+            ITE.VLRTOT * FAMI.PERCOMI
+        ) / 100,
+        0
+    )* 
+    (SELECT
+    (FIN2.VLRDESDOB/CAB3.VLRNOTA) AS PERCENTUAL
+
+FROM TGFCAB CAB3
+INNER JOIN
+        TGFFIN FIN2 
+            ON CAB3.NUNOTA = FIN2.NUNOTA
+
+ 
+    WHERE
+        CAB3.NUNOTA = ITE.NUNOTA 
+        AND FIN2.NUFIN = FINA.NUFIN),4) 
+
+
+
+ 
+    ELSE 
+
+ (
+        ROUND(NVL(
+        (
+            ITE.VLRTOT * FAMI.PERCOMI
+        ) / 100,
+        0
+    )* 
+    (SELECT
+            (FIN2.VLRDESDOB/CAB3.VLRNOTA) AS PERCENTUAL
+
+FROM TGFCAB CAB3
+INNER 
+        JOIN
+            TGFFIN FIN2 
+                ON CAB3.NUNOTA = FIN2.NUNOTA
+
+ 
+        WHERE
+            CAB3.NUNOTA = ITE.NUNOTA 
+            AND FIN2.NUFIN = FINA.NUFIN),4) 
+    )* -1 END
+
+ AS VALORCOMISSAO,
+
+
+     FINA.DHBAIXA,
+    FAMI.CODVEND,
+    VEN.APELIDO AS GERENTE,
+    VEN.CODPARC,
+    PARC.NOMEPARC,
+    FAMI.FAMILIA
+
+
+FROM
+    TGFITE ITE
+    
+INNER JOIN
+    TGFPRO PROD 
+        ON ITE.CODPROD = PROD.CODPROD
+    
+INNER JOIN
+    TGFCAB CAB 
+        ON ITE.NUNOTA = CAB.NUNOTA
+    
+INNER JOIN
+    AD_COMIFAMI FAMI 
+        ON PROD.CODGRUPOPROD = FAMI.CODGRUPOPROD
+    
+INNER JOIN
+    TGFVEN VEN 
+        ON FAMI.CODVEND = VEN.CODVEND
+    
+INNER JOIN
+    TGFPAR PARC 
+        ON VEN.CODPARC = PARC.CODPARC
+    
+INNER JOIN
+    TGFFIN FINA 
+        ON ITE.NUNOTA = FINA.NUNOTA
+
+   
+WHERE
+    CAB.TIPMOV in (
+        'V','D'
+    ) 
+    AND CAB.STATUSNOTA ='L'  
+    AND FINA.DHBAIXA IS NOT NULL 
+    AND FINA.AD_COMISSAOGERENTE IS NULL
+
+   
+    AND FINA.NUFIN NOT IN (
+        SELECT
+            LCA.NUFIN 
+        FROM
+            AD_LANCAMENTOS LCA
+    ) 
+
+   
+    AND CAB.CODVEND <> FAMI.CODVEND
+
+ORDER BY
+    ITE.NUNOTA,
+    PROD.CODGRUPOPROD
+
+
 
